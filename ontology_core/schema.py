@@ -77,3 +77,41 @@ class DerivedConceptDef:
     inputs: tuple[str, ...]
     formula_text: str
     description: str = ""
+
+
+@dataclass(frozen=True)
+class SqlDef:
+    """SQL 구문 단위 메타데이터."""
+
+    name: str
+    sql: str
+    entity: str
+    params: tuple[str, ...] = field(default_factory=tuple)
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """name/sql/entity 빈 문자열 검증."""
+        if not self.name:
+            raise ValueError("name은 빈 문자열일 수 없습니다.")
+        if not self.sql:
+            raise ValueError("sql은 빈 문자열일 수 없습니다.")
+        if not self.entity:
+            raise ValueError("entity는 빈 문자열일 수 없습니다.")
+
+
+@dataclass(frozen=True)
+class ModuleDef:
+    """Java 소스 모듈 단위 메타데이터."""
+
+    name: str
+    layer: str
+    file_path: str
+    related_entities: tuple[str, ...] = field(default_factory=tuple)
+    related_sqls: tuple[str, ...] = field(default_factory=tuple)
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """layer 값 유효성 검증."""
+        allowed_layers = {"controller", "biz", "dao", "mapper"}
+        if self.layer not in allowed_layers:
+            raise ValueError(f"허용되지 않는 layer: '{self.layer}'. 허용값: {allowed_layers}")

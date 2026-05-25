@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ontology_core.schema import DerivedConceptDef, EntityDef, RelationshipDef
+from ontology_core.schema import DerivedConceptDef, EntityDef, ModuleDef, RelationshipDef, SqlDef
 
 
 class Ontology:
@@ -13,6 +13,8 @@ class Ontology:
         self._entities: dict[str, EntityDef] = {}
         self._relationships: dict[str, RelationshipDef] = {}
         self._derived_concepts: dict[str, DerivedConceptDef] = {}
+        self._sqls: dict[str, SqlDef] = {}
+        self._modules: dict[str, ModuleDef] = {}
 
     def register_entity(self, entity_def: EntityDef) -> None:
         """EntityDef를 이름 기준으로 등록한다."""
@@ -43,6 +45,26 @@ class Ontology:
         if name not in self._derived_concepts:
             raise KeyError(f"등록되지 않은 파생 개념: '{name}'")
         return self._derived_concepts[name]
+
+    def register_sql(self, sql_def: SqlDef) -> None:
+        """SqlDef를 이름 기준으로 등록한다."""
+        self._sqls[sql_def.name] = sql_def
+
+    def get_sql(self, name: str) -> SqlDef:
+        """이름으로 SqlDef를 조회한다. 없으면 KeyError."""
+        if name not in self._sqls:
+            raise KeyError(f"등록되지 않은 SQL: '{name}'")
+        return self._sqls[name]
+
+    def register_module(self, module_def: ModuleDef) -> None:
+        """ModuleDef를 이름 기준으로 등록한다."""
+        self._modules[module_def.name] = module_def
+
+    def get_module(self, name: str) -> ModuleDef:
+        """이름으로 ModuleDef를 조회한다. 없으면 KeyError."""
+        if name not in self._modules:
+            raise KeyError(f"등록되지 않은 모듈: '{name}'")
+        return self._modules[name]
 
     def validate(self) -> list[str]:
         """등록된 메타데이터의 정합성을 검증하고 오류 메시지 목록을 반환한다."""
@@ -75,5 +97,23 @@ class Ontology:
                     f"관계 '{rel.name}'의 via_entity '{rel.via_entity}'가 "
                     f"등록되지 않은 엔티티입니다."
                 )
+
+        for sql in self._sqls.values():
+            if sql.entity not in self._entities:
+                errors.append(
+                    f"SQL '{sql.name}'의 entity '{sql.entity}'가 등록되지 않은 엔티티입니다."
+                )
+
+        for mod in self._modules.values():
+            for e in mod.related_entities:
+                if e not in self._entities:
+                    errors.append(
+                        f"모듈 '{mod.name}'의 related_entity '{e}'가 등록되지 않은 엔티티입니다."
+                    )
+            for s in mod.related_sqls:
+                if s not in self._sqls:
+                    errors.append(
+                        f"모듈 '{mod.name}'의 related_sql '{s}'가 등록되지 않은 SQL입니다."
+                    )
 
         return errors

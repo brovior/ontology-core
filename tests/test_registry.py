@@ -2,7 +2,7 @@
 
 import pytest
 from ontology_core.registry import Ontology
-from ontology_core.schema import AttributeDef, DerivedConceptDef, EntityDef, RelationshipDef
+from ontology_core.schema import AttributeDef, DerivedConceptDef, EntityDef, ModuleDef, RelationshipDef, SqlDef
 
 
 def _attr(name: str) -> AttributeDef:
@@ -148,3 +148,68 @@ class TestOntologyValidate:
         onto.register_entity(bad)
         errors = onto.validate()
         assert len(errors) == 2
+
+
+def _sql(name: str = "GET_MODEL", entity: str = "MODEL") -> SqlDef:
+    """테스트용 SqlDef 생성 헬퍼."""
+    return SqlDef(name=name, sql="SELECT * FROM T_MODEL WHERE MODEL_CD = :model_cd", entity=entity)
+
+
+def _module(name: str = "ModelController", layer: str = "controller", **kwargs: object) -> ModuleDef:
+    """테스트용 ModuleDef 생성 헬퍼."""
+    return ModuleDef(name=name, layer=layer, file_path=f"com/example/{name}.java", **kwargs)  # type: ignore[arg-type]
+
+
+class TestOntologySqlModule:
+    def test_register_and_get_sql(self) -> None:
+        """SqlDef 등록 후 이름으로 조회."""
+        onto = Ontology()
+        onto.register_sql(_sql("GET_MODEL", "MODEL"))
+        assert onto.get_sql("GET_MODEL").entity == "MODEL"
+
+    def test_get_sql_not_found(self) -> None:
+        """미등록 SQL 조회 시 KeyError."""
+        onto = Ontology()
+        with pytest.raises(KeyError, match="등록되지 않은 SQL"):
+            onto.get_sql("MISSING")
+
+    def test_register_and_get_module(self) -> None:
+        """ModuleDef 등록 후 이름으로 조회."""
+        onto = Ontology()
+        onto.register_module(_module("ModelController", "controller"))
+        assert onto.get_module("ModelController").layer == "controller"
+
+    def test_get_module_not_found(self) -> None:
+        """미등록 모듈 조회 시 KeyError."""
+        onto = Ontology()
+        with pytest.raises(KeyError, match="등록되지 않은 모듈"):
+            onto.get_module("MISSING")
+
+    def test_validate_sql_unknown_entity(self) -> None:
+        """SqlDef.entity가 미등록이면 validate()가 오류 반환."""
+        onto = Ontology()
+        onto.register_sql(_sql("Q", "UNKNOWN_ENTITY"))
+        errors = onto.validate()
+        assert any("UNKNOWN_ENTITY" in e for e in errors)
+
+    def test_validate_module_unknown_entity(self) -> None:
+        """ModuleDef.related_entities에 미등록 엔티티가 있으면 오류 반환."""
+        onto = Ontology()
+        onto.register_module(_module(related_entities=("GHOST",)))
+        errors = onto.validate()
+        assert any("GHOST" in e for e in errors)
+
+    def test_validate_module_unknown_sql(self) -> None:
+        """ModuleDef.related_sqls에 미등록 SQL이 있으면 오류 반환."""
+        onto = Ontology()
+        onto.register_module(_module(related_sqls=("GHOST_SQL",)))
+        errors = onto.validate()
+        assert any("GHOST_SQL" in e for e in errors)
+
+    def test_validate_clean_with_sql_and_module(self) -> None:
+        """모두 정상 등록 시 validate()가 빈 리스트 반환."""
+        onto = Ontology()
+        onto.register_entity(_entity("MODEL"))
+        onto.register_sql(_sql("GET_MODEL", "MODEL"))
+        onto.register_module(_module(related_entities=("MODEL",), related_sqls=("GET_MODEL",)))
+        assert onto.validate() == []
