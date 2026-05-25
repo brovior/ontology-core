@@ -81,6 +81,33 @@ class TestEntityDef:
         with pytest.raises((AttributeError, TypeError)):
             entity.name = "changed"  # type: ignore[misc]
 
+    def test_empty_primary_key_raises(self) -> None:
+        """primary_key가 빈 tuple이면 ValueError."""
+        with pytest.raises(ValueError, match="primary_key는 비어 있을 수 없습니다"):
+            EntityDef(
+                name="E", table_name="T_E", description="", domain="test",
+                primary_key=(),
+                attributes=(_make_attr("id"),),
+            )
+
+    def test_empty_attributes_raises(self) -> None:
+        """attributes가 빈 tuple이면 ValueError."""
+        with pytest.raises(ValueError, match="attributes는 비어 있을 수 없습니다"):
+            EntityDef(
+                name="E", table_name="T_E", description="", domain="test",
+                primary_key=("id",),
+                attributes=(),
+            )
+
+    def test_duplicate_attribute_names_raises(self) -> None:
+        """attributes에 중복 name이 있으면 ValueError."""
+        with pytest.raises(ValueError, match="중복된 name"):
+            EntityDef(
+                name="E", table_name="T_E", description="", domain="test",
+                primary_key=("id",),
+                attributes=(_make_attr("id"), _make_attr("id")),
+            )
+
 
 class TestRelationshipDef:
     def test_create(self) -> None:
@@ -134,6 +161,23 @@ class TestSqlDef:
         assert s.entity == "MODEL"
         assert s.params == ()
         assert s.description == ""
+        assert s.sql_type == "SELECT"
+
+    def test_sql_type_default_is_select(self) -> None:
+        """sql_type 기본값은 SELECT."""
+        s = self._make_sql()
+        assert s.sql_type == "SELECT"
+
+    def test_all_valid_sql_types(self) -> None:
+        """모든 허용 sql_type이 정상 생성."""
+        for sql_type in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+            s = SqlDef(name="Q", sql="SELECT 1", entity="MODEL", sql_type=sql_type)
+            assert s.sql_type == sql_type
+
+    def test_invalid_sql_type_raises(self) -> None:
+        """허용되지 않는 sql_type이면 ValueError."""
+        with pytest.raises(ValueError, match="허용되지 않는 sql_type"):
+            SqlDef(name="Q", sql="SELECT 1", entity="MODEL", sql_type="MERGE")
 
     def test_empty_name_raises(self) -> None:
         """name이 빈 문자열이면 ValueError."""
