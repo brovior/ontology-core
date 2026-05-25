@@ -1,7 +1,7 @@
 """schema.py 단위 테스트."""
 
 import pytest
-from ontology_core.schema import AttributeDef, DerivedConceptDef, EntityDef, RelationshipDef
+from ontology_core.schema import AttributeDef, DerivedConceptDef, EntityDef, ModuleDef, RelationshipDef, SqlDef
 
 
 def _make_attr(name: str = "id", unit: str = "none") -> AttributeDef:
@@ -121,3 +121,79 @@ class TestDerivedConceptDef:
             formula_text="st / real_ct",
         )
         assert concept.formula_ref(real_ct=10.0, st=8.0) == pytest.approx(0.8)
+
+
+class TestSqlDef:
+    def _make_sql(self, name: str = "GET_MODEL", sql: str = "SELECT * FROM T_MODEL", entity: str = "MODEL") -> SqlDef:
+        return SqlDef(name=name, sql=sql, entity=entity)
+
+    def test_create_basic(self) -> None:
+        """기본 SqlDef 생성."""
+        s = self._make_sql()
+        assert s.name == "GET_MODEL"
+        assert s.entity == "MODEL"
+        assert s.params == ()
+        assert s.description == ""
+
+    def test_empty_name_raises(self) -> None:
+        """name이 빈 문자열이면 ValueError."""
+        with pytest.raises(ValueError, match="name은 빈 문자열일 수 없습니다"):
+            SqlDef(name="", sql="SELECT 1", entity="MODEL")
+
+    def test_empty_sql_raises(self) -> None:
+        """sql이 빈 문자열이면 ValueError."""
+        with pytest.raises(ValueError, match="sql은 빈 문자열일 수 없습니다"):
+            SqlDef(name="Q", sql="", entity="MODEL")
+
+    def test_empty_entity_raises(self) -> None:
+        """entity가 빈 문자열이면 ValueError."""
+        with pytest.raises(ValueError, match="entity는 빈 문자열일 수 없습니다"):
+            SqlDef(name="Q", sql="SELECT 1", entity="")
+
+    def test_default_params_empty_tuple(self) -> None:
+        """params 기본값은 빈 tuple."""
+        s = self._make_sql()
+        assert s.params == ()
+        assert isinstance(s.params, tuple)
+
+    def test_frozen(self) -> None:
+        """frozen=True — 속성 변경 불가."""
+        s = self._make_sql()
+        with pytest.raises((AttributeError, TypeError)):
+            s.name = "changed"  # type: ignore[misc]
+
+
+class TestModuleDef:
+    def _make_module(self, layer: str = "controller") -> ModuleDef:
+        return ModuleDef(name="ModelController", layer=layer, file_path="com/example/ModelController.java")
+
+    def test_create_basic(self) -> None:
+        """기본 ModuleDef 생성."""
+        m = self._make_module("controller")
+        assert m.name == "ModelController"
+        assert m.layer == "controller"
+        assert m.related_entities == ()
+        assert m.related_sqls == ()
+
+    def test_all_valid_layers(self) -> None:
+        """모든 허용 layer가 정상 생성."""
+        for layer in ("controller", "biz", "dao", "mapper"):
+            m = self._make_module(layer)
+            assert m.layer == layer
+
+    def test_invalid_layer_raises(self) -> None:
+        """허용되지 않는 layer이면 ValueError."""
+        with pytest.raises(ValueError, match="허용되지 않는 layer"):
+            ModuleDef(name="X", layer="service", file_path="X.java")
+
+    def test_default_collections_empty_tuple(self) -> None:
+        """related_entities, related_sqls 기본값은 빈 tuple."""
+        m = self._make_module()
+        assert m.related_entities == ()
+        assert m.related_sqls == ()
+
+    def test_frozen(self) -> None:
+        """frozen=True — 속성 변경 불가."""
+        m = self._make_module()
+        with pytest.raises((AttributeError, TypeError)):
+            m.name = "changed"  # type: ignore[misc]

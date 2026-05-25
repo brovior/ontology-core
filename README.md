@@ -1,11 +1,12 @@
 # ontology-core
 
-시맨틱 데이터 레이어를 위한 범용 온톨로지 엔진입니다. 메타데이터 기반으로 데이터 소스를 추상화하여, 특정 SQL 스키마에 종속되지 않고 엔티티·관계·파생 개념을 정의하고 균일한 인터페이스로 데이터를 조회할 수 있습니다.
+시맨틱 데이터 레이어를 위한 범용 온톨로지 엔진입니다. 메타데이터 기반으로 데이터 소스를 추상화하여, 특정 SQL 스키마에 종속되지 않고 엔티티·관계·파생 개념·SQL 구문·모듈을 정의하고 균일한 인터페이스로 데이터를 조회할 수 있습니다.
 
 ## 특징
 
 - **불변 메타데이터 정의** — `frozen=True` 데이터클래스로 런타임 변이 방지
-- **중앙 레지스트리** — 엔티티·관계·파생 개념을 이름 기반으로 관리
+- **중앙 레지스트리** — 엔티티·관계·파생 개념·SQL·모듈을 이름 기반으로 관리
+- **교차 참조 검증** — `validate()`가 등록 누락·참조 오류를 한꺼번에 수집
 - **프로토콜 기반 확장** — 상속 없이 4개 메서드 구현만으로 새 데이터 백엔드 추가 가능
 - **쿼리 전 검증** — 미등록 엔티티·관계 조회 시 데이터 소스 호출 전에 즉시 `KeyError` 발생
 - **의존성 없음** — 표준 라이브러리만 사용 (Python ≥ 3.10)
@@ -27,7 +28,7 @@ pip install -e ".[dev]"
 ## 빠른 시작
 
 ```python
-from ontology_core.schema import AttributeDef, EntityDef, RelationshipDef, DerivedConceptDef
+from ontology_core.schema import AttributeDef, EntityDef, SqlDef, ModuleDef
 from ontology_core.registry import Ontology
 from ontology_core.query import OntologyQuery
 
@@ -44,15 +45,32 @@ model = EntityDef(
     attributes=(model_cd, model_nm),
 )
 
+sql = SqlDef(
+    name="GET_MODEL_BY_CD",
+    sql="SELECT * FROM T_MODEL WHERE MODEL_CD = :model_cd",
+    entity="MODEL",
+    params=("model_cd",),
+)
+
+module = ModuleDef(
+    name="ModelController",
+    layer="controller",
+    file_path="com/example/ModelController.java",
+    related_entities=("MODEL",),
+    related_sqls=("GET_MODEL_BY_CD",),
+)
+
 # 2. 레지스트리 등록 및 검증
 ontology = Ontology()
 ontology.register_entity(model)
+ontology.register_sql(sql)
+ontology.register_module(module)
 
 errors = ontology.validate()
 if errors:
     raise RuntimeError(errors)
 
-# 3. DataSource 구현 (예: 인메모리)
+# 3. DataSource 구현 및 쿼리 실행
 class InMemoryDataSource:
     def fetch(self, entity_name, key):
         data = {"MODEL": [{"model_cd": "M001", "model_nm": "알파"}]}
@@ -60,12 +78,10 @@ class InMemoryDataSource:
             if all(row.get(k) == v for k, v in key.items()):
                 return row
         return None
-
     def fetch_many(self, entity_name, filter): return []
     def fetch_all(self, entity_name): return []
     def join(self, rel_name, source_key): return []
 
-# 4. 쿼리 실행
 query = OntologyQuery(ontology=ontology, data_source=InMemoryDataSource())
 record = query.get("MODEL", {"model_cd": "M001"})
 print(record)  # {'model_cd': 'M001', 'model_nm': '알파'}
@@ -87,21 +103,23 @@ print(record)  # {'model_cd': 'M001', 'model_nm': '알파'}
 │    └─ SqlDataSource (Phase F 구현 예정)          │
 ├─────────────────────────────────────────────────┤
 │  registry.py  ·  Ontology                       │  중앙 메타데이터 스토어
-│    ├─ register_entity / relationship / concept  │
-│    ├─ get_entity / relationship / concept       │
+│    ├─ register / get : entity, relationship,    │
+│    │                   concept, sql, module     │
 │    └─ validate()                                │
 ├─────────────────────────────────────────────────┤
 │  schema.py  ·  불변 메타데이터 정의              │  스키마 레이어
 │    ├─ AttributeDef    (논리 컬럼)               │
 │    ├─ EntityDef       (논리 테이블)             │
 │    ├─ RelationshipDef (방향성 관계)             │
-│    └─ DerivedConceptDef (파생 공식)             │
+│    ├─ DerivedConceptDef (파생 공식)             │
+│    ├─ SqlDef          (SQL 구문)                │
+│    └─ ModuleDef       (Java 모듈)              │
 └─────────────────────────────────────────────────┘
 ```
 
 ### schema.py — 불변 메타데이터 정의
 
-네 가지 `frozen=True` 데이터클래스로 구성됩니다.
+여섯 가지 `frozen=True` 데이터클래스로 구성됩니다.
 
 | 클래스 | 역할 | 주요 제약 |
 |--------|------|-----------|
@@ -109,6 +127,8 @@ print(record)  # {'model_cd': 'M001', 'model_nm': '알파'}
 | `EntityDef` | 논리 테이블 | `primary_key` 항목이 `attributes`에 존재해야 함 |
 | `RelationshipDef` | 방향성 관계 | `cardinality` ∈ `{1:1, 1:N, M:N}` |
 | `DerivedConceptDef` | 파생 공식 | `formula_ref`는 callable; `inputs`로 키워드 인수 선언 |
+| `SqlDef` | SQL 구문 | `name`, `sql`, `entity` 모두 빈 문자열 불가 |
+| `ModuleDef` | Java 소스 모듈 | `layer` ∈ `{controller, biz, dao, mapper}` |
 
 모든 컬렉션 필드는 불변성 보장을 위해 `list` 대신 `tuple`을 사용합니다.
 
@@ -116,14 +136,23 @@ print(record)  # {'model_cd': 'M001', 'model_nm': '알파'}
 
 ```python
 ontology = Ontology()
+# 등록
 ontology.register_entity(entity_def)
 ontology.register_relationship(rel_def)
 ontology.register_derived_concept(concept_def)
+ontology.register_sql(sql_def)
+ontology.register_module(module_def)
 
-errors = ontology.validate()  # 교차 참조 검증, 오류 없으면 []
+# 교차 참조 검증 (오류 없으면 [])
+errors = ontology.validate()
 ```
 
-`validate()`는 예외를 던지지 않고 오류 문자열 목록을 반환합니다. 빈 목록이면 정합성 통과입니다.
+`validate()`가 검증하는 항목:
+- `EntityDef.primary_key` 항목이 `attributes`에 존재하는지
+- `RelationshipDef`의 `source_entity`, `target_entity`, `via_entity`가 등록된 엔티티인지
+- `SqlDef.entity`가 등록된 엔티티인지
+- `ModuleDef.related_entities`의 각 항목이 등록된 엔티티인지
+- `ModuleDef.related_sqls`의 각 항목이 등록된 SQL인지
 
 ### data_source.py — DataSource Protocol
 
@@ -152,9 +181,48 @@ class DataSource(Protocol):
 
 ## 사용 예제
 
+### SqlDef — SQL 구문 메타데이터 등록
+
+```python
+from ontology_core.schema import SqlDef
+
+sql = SqlDef(
+    name="GET_MODEL_BY_CD",
+    sql="SELECT * FROM T_MODEL WHERE MODEL_CD = :model_cd",
+    entity="MODEL",
+    params=("model_cd",),
+    description="모델 코드로 단건 조회",
+)
+ontology.register_sql(sql)
+
+# 조회
+retrieved = ontology.get_sql("GET_MODEL_BY_CD")
+print(retrieved.entity)  # MODEL
+```
+
+### ModuleDef — Java 모듈 메타데이터 등록
+
+```python
+from ontology_core.schema import ModuleDef
+
+module = ModuleDef(
+    name="ModelDao",
+    layer="dao",
+    file_path="com/example/dao/ModelDao.java",
+    related_entities=("MODEL",),
+    related_sqls=("GET_MODEL_BY_CD",),
+    description="모델 데이터 접근 객체",
+)
+ontology.register_module(module)
+```
+
+허용 layer 값: `controller` · `biz` · `dao` · `mapper`
+
 ### 관계 탐색
 
 ```python
+from ontology_core.schema import RelationshipDef
+
 ontology.register_relationship(RelationshipDef(
     name="MODEL_TO_PLANTS",
     source_entity="MODEL",
@@ -170,6 +238,8 @@ plants = query.traverse("MODEL_TO_PLANTS", {"model_cd": "M001"})
 ### 파생 개념 계산
 
 ```python
+from ontology_core.schema import DerivedConceptDef
+
 ontology.register_derived_concept(DerivedConceptDef(
     name="efficiency",
     formula_ref=lambda real_ct, st: round(st / real_ct, 4) if real_ct else 0.0,
@@ -185,10 +255,7 @@ result = query.derive("efficiency", real_ct=10.0, st=8.0)
 
 ```python
 class MyDatabaseSource:
-    def fetch(self, entity_name: str, key: dict) -> dict | None:
-        # DB 조회 로직
-        ...
-
+    def fetch(self, entity_name: str, key: dict) -> dict | None: ...
     def fetch_many(self, entity_name: str, filter: dict) -> list[dict]: ...
     def fetch_all(self, entity_name: str) -> list[dict]: ...
     def join(self, rel_name: str, source_key: dict) -> list[dict]: ...
@@ -207,7 +274,7 @@ pytest
 pytest tests/test_schema.py
 
 # 특정 테스트
-pytest tests/test_registry.py::TestOntologyValidate::test_validate_clean
+pytest tests/test_registry.py::TestOntologySqlModule::test_validate_clean_with_sql_and_module
 ```
 
 테스트에서 데이터 소스를 목킹할 때는 `tests/test_query.py`의 `InMemoryDataSource` 구현을 참고하세요.
@@ -225,7 +292,7 @@ python -m hatchling build
 ontology-core/
 ├── ontology_core/
 │   ├── __init__.py
-│   ├── schema.py       # 불변 메타데이터 정의
+│   ├── schema.py       # 불변 메타데이터 정의 (6개 클래스)
 │   ├── registry.py     # 중앙 레지스트리 (Ontology)
 │   ├── data_source.py  # DataSource 프로토콜 + SqlDataSource 스텁
 │   └── query.py        # 쿼리 엔진 (OntologyQuery)
