@@ -117,3 +117,35 @@ class Ontology:
                     )
 
         return errors
+
+    def list_entities(self) -> list[str]:
+        """등록된 EntityDef 이름 목록을 반환한다."""
+        return list(self._entities)
+
+    def list_relationships(self) -> list[str]:
+        """등록된 RelationshipDef 이름 목록을 반환한다."""
+        return list(self._relationships)
+
+    def list_derived_concepts(self) -> list[str]:
+        """등록된 DerivedConceptDef 이름 목록을 반환한다."""
+        return list(self._derived_concepts)
+
+    def list_sqls(self) -> list[str]:
+        """등록된 SqlDef 이름 목록을 반환한다."""
+        return list(self._sqls)
+
+    def list_modules(self) -> list[str]:
+        """등록된 ModuleDef 이름 목록을 반환한다."""
+        return list(self._modules)
+
+    def get_entities_by_domain(self, domain: str) -> list[EntityDef]:
+        """domain이 일치하는 EntityDef 목록을 반환한다."""
+        return [e for e in self._entities.values() if e.domain == domain]
+
+    def get_modules_by_layer(self, layer: str) -> list[ModuleDef]:
+        """layer가 일치하는 ModuleDef 목록을 반환한다."""
+        return [m for m in self._modules.values() if m.layer == layer]
+
+    def get_entities_by_type(self, entity_type: str) -> list[EntityDef]:
+        """entity_type이 일치하는 EntityDef 목록을 반환한다."""
+        return [e for e in self._entities.values() if e.entity_type == entity_type]

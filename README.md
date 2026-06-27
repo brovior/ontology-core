@@ -124,13 +124,27 @@ print(record)  # {'model_cd': 'M001', 'model_nm': '알파'}
 | 클래스 | 역할 | 주요 제약 |
 |--------|------|-----------|
 | `AttributeDef` | 논리 컬럼 | `unit` ∈ `{sec, pct, count, grade, weeks, none}` |
-| `EntityDef` | 논리 테이블 | `primary_key` 항목이 `attributes`에 존재해야 함 |
+| `EntityDef` | 논리 테이블 | `primary_key`·`attributes` 비어 있을 수 없음; `entity_type` ∈ `{M, D, P, S, C, R}` 또는 빈 문자열 |
 | `RelationshipDef` | 방향성 관계 | `cardinality` ∈ `{1:1, 1:N, M:N}` |
 | `DerivedConceptDef` | 파생 공식 | `formula_ref`는 callable; `inputs`로 키워드 인수 선언 |
-| `SqlDef` | SQL 구문 | `name`, `sql`, `entity` 모두 빈 문자열 불가 |
+| `SqlDef` | SQL 구문 | `name`, `sql`, `entity` 모두 빈 문자열 불가; `sql_type` ∈ `{SELECT, INSERT, UPDATE, DELETE}` |
 | `ModuleDef` | Java 소스 모듈 | `layer` ∈ `{controller, biz, dao, mapper}` |
 
 모든 컬렉션 필드는 불변성 보장을 위해 `list` 대신 `tuple`을 사용합니다.
+
+#### EntityDef.entity_type — 테이블 유형 코드
+
+엔티티의 구조적 역할을 나타내는 선택적 분류 축입니다(빈 문자열 = 미분류). 관계 추출·
+카디널리티 추론·cross-module 허브 분석의 사전 신호로 활용됩니다.
+
+| 코드 | 의미 | 비고 |
+|------|------|------|
+| `M` | 마스터(기준 정보) | 단일 PK 경향, 1:N의 1쪽 |
+| `D` | 디테일(상세/명세) | 마스터 참조, 복합키 경향, 1:N의 N쪽 |
+| `P` | 피리어드(기간성) | 날짜/기간 + 마스터키 복합 PK, 이력성 |
+| `S` | 써머리(요약/집계) | 원본에서 파생, 집계 단위 키 |
+| `C` | 코드(공통 코드) | 작은 룩업 테이블, 여러 모듈이 공유 참조 |
+| `R` | 임시 | 추출 대상에서 제외 또는 별도 처리 |
 
 ### registry.py — 중앙 레지스트리 (`Ontology`)
 
@@ -153,6 +167,12 @@ errors = ontology.validate()
 - `SqlDef.entity`가 등록된 엔티티인지
 - `ModuleDef.related_entities`의 각 항목이 등록된 엔티티인지
 - `ModuleDef.related_sqls`의 각 항목이 등록된 SQL인지
+
+조회 편의 메서드:
+- `list_entities()` · `list_relationships()` · `list_derived_concepts()` · `list_sqls()` · `list_modules()` — 등록된 이름 목록(등록 순서)
+- `get_entities_by_domain(domain)` — 도메인별 엔티티 필터
+- `get_entities_by_type(entity_type)` — 유형 코드별 엔티티 필터 (예: `"C"` → 공통 코드 테이블)
+- `get_modules_by_layer(layer)` — 레이어별 모듈 필터
 
 ### data_source.py — DataSource Protocol
 

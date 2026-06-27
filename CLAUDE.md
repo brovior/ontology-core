@@ -40,10 +40,10 @@ pip install hatchling && python -m hatchling build
 ### `schema.py` — 불변 메타데이터 정의
 모든 스키마 타입은 `frozen=True` 데이터클래스입니다. `__post_init__`의 유효성 검증 외에는 별도 동작을 갖지 않습니다:
 - `AttributeDef`: 논리 컬럼. `unit`은 `{"sec","pct","count","grade","weeks","none"}` 중 하나여야 합니다.
-- `EntityDef`: 논리 테이블. `AttributeDef` 튜플과 속성 이름의 `primary_key` 튜플을 보유합니다.
+- `EntityDef`: 논리 테이블. `AttributeDef` 튜플과 속성 이름의 `primary_key` 튜플을 보유합니다. `primary_key`·`attributes`는 비어 있을 수 없고 속성명은 중복될 수 없습니다. 선택적 `entity_type`은 테이블 유형 코드로 `{"M","D","P","S","C","R"}`(마스터/디테일/피리어드/써머리/코드/임시) 중 하나 또는 빈 문자열(미분류)이며, 관계·카디널리티 추론의 사전 신호로 쓰입니다.
 - `RelationshipDef`: 두 엔티티 간의 방향성 관계. `cardinality`는 `"1:1"`, `"1:N"`, `"M:N"` 중 하나. 선택적 `via_entity`로 M:N의 중간 엔티티를 지정합니다.
 - `DerivedConceptDef`: 이름이 있는 공식. `formula_ref`는 plain callable; `inputs`로 키워드 인수명을 선언합니다.
-- `SqlDef`: SQL 구문 단위 메타데이터. `name`, `sql`, `entity`는 빈 문자열 불가. `params`로 바인드 파라미터명을 선언합니다.
+- `SqlDef`: SQL 구문 단위 메타데이터. `name`, `sql`, `entity`는 빈 문자열 불가. `sql_type`은 `{"SELECT","INSERT","UPDATE","DELETE"}` 중 하나(기본 `"SELECT"`). `params`로 바인드 파라미터명을 선언합니다.
 - `ModuleDef`: Java 소스 모듈 단위 메타데이터. `layer`는 `{"controller","biz","dao","mapper"}` 중 하나. `related_entities`와 `related_sqls`로 연관 메타데이터를 참조합니다.
 
 모든 컬렉션 필드는 불변성 보장을 위해 `list` 대신 `tuple`을 사용합니다.
@@ -57,6 +57,8 @@ pip install hatchling && python -m hatchling build
 - `ModuleDef.related_sqls`의 각 항목이 등록된 SQL인지 확인
 
 `validate()`는 반환 전에 모든 오류를 수집합니다. 호출자는 반환된 목록을 반드시 확인해야 합니다.
+
+조회 편의 메서드도 제공합니다: `list_entities()`/`list_relationships()`/`list_derived_concepts()`/`list_sqls()`/`list_modules()`(등록 순서 이름 목록), `get_entities_by_domain(domain)`, `get_entities_by_type(entity_type)`, `get_modules_by_layer(layer)`.
 
 ### `data_source.py` — 데이터 접근 추상화
 `DataSource`는 4개의 메서드를 가진 `runtime_checkable` `Protocol`입니다: `fetch`(PK로 단건 조회), `fetch_many`(필터 목록), `fetch_all`(전체 스캔), `join`(관계 탐색). 이 4개 메서드를 구현한 클래스는 상속 없이 프로토콜을 만족합니다.
@@ -72,6 +74,7 @@ pip install hatchling && python -m hatchling build
 
 - **튜플 사용 원칙**: 컬렉션을 담는 스키마 필드(`attributes`, `primary_key`, `join_keys`, `inputs`, `enum_values`, `params`, `related_entities`, `related_sqls`)는 항상 `tuple`이며 `list`를 사용하지 않습니다. 테스트나 애플리케이션 코드에서 생성할 때는 `tuple(...)` 또는 `(item,)` 리터럴을 사용하세요.
 - **이름 기반 레지스트리**: 엔티티·관계·파생 개념·SQL·모듈은 각각 `name` 필드로 등록되고 조회됩니다. 이름은 각 카테고리 내에서 고유해야 합니다.
+- **분류 축은 검증된 enum 필드로**: 유한한 분류 값(`AttributeDef.unit`, `RelationshipDef.cardinality`, `ModuleDef.layer`, `SqlDef.sql_type`, `EntityDef.entity_type`)은 `description`/`domain`에 녹이지 않고 전용 필드 + `__post_init__` enum 검증으로 구조화합니다. `entity_type`(테이블 유형 코드)은 추출기가 채우며 코어는 분류값 저장·조회만 담당합니다(R 필터링·카디널리티 추론은 추출기 책임).
 - **프로토콜 기반 확장성**: 새 데이터 백엔드를 추가하려면 임의 클래스에 4개의 `DataSource` 프로토콜 메서드를 구현하면 됩니다 — 기반 클래스 상속 불필요.
 - **목록으로 반환되는 오류, 예외 없음**: `Ontology.validate()`는 `list[str]`을 반환합니다. 빈 목록은 정합성 통과를 의미합니다. 다운스트림 코드는 등록된 관계가 실제 엔티티를 참조한다고 신뢰하기 전에 반드시 이 목록을 확인해야 합니다.
 - **`InMemoryDataSource`를 통한 테스트 더블**: `tests/test_query.py`에 완전히 동작하는 인메모리 `DataSource` 구현체가 있습니다. 테스트에서 데이터를 목킹할 때의 참조 패턴으로 활용하세요.

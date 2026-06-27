@@ -149,6 +149,10 @@ class TestOntologyValidate:
         errors = onto.validate()
         assert len(errors) == 2
 
+    def test_validate_empty_registry_returns_empty(self) -> None:
+        """빈 레지스트리에서 validate()는 빈 리스트를 반환한다."""
+        assert Ontology().validate() == []
+
 
 def _sql(name: str = "GET_MODEL", entity: str = "MODEL") -> SqlDef:
     """테스트용 SqlDef 생성 헬퍼."""
@@ -213,3 +217,109 @@ class TestOntologySqlModule:
         onto.register_sql(_sql("GET_MODEL", "MODEL"))
         onto.register_module(_module(related_entities=("MODEL",), related_sqls=("GET_MODEL",)))
         assert onto.validate() == []
+
+
+def _entity_domain(name: str, domain: str) -> EntityDef:
+    """도메인 지정 EntityDef 생성 헬퍼."""
+    pk = "id"
+    return EntityDef(
+        name=name, table_name=f"T_{name}", description="", domain=domain,
+        primary_key=(pk,), attributes=(_attr(pk), _attr("name")),
+    )
+
+
+def _entity_typed(name: str, entity_type: str) -> EntityDef:
+    """entity_type 지정 EntityDef 생성 헬퍼."""
+    pk = "id"
+    return EntityDef(
+        name=name, table_name=f"T_{name}", description="", domain="test",
+        primary_key=(pk,), attributes=(_attr(pk), _attr("name")),
+        entity_type=entity_type,
+    )
+
+
+class TestOntologyListMethods:
+    def test_list_entities_empty(self) -> None:
+        """빈 레지스트리에서 list_entities()는 빈 리스트를 반환한다."""
+        assert Ontology().list_entities() == []
+
+    def test_list_entities(self) -> None:
+        """등록된 엔티티 이름 목록을 반환한다."""
+        onto = Ontology()
+        onto.register_entity(_entity("MODEL"))
+        onto.register_entity(_entity("PLANT"))
+        assert onto.list_entities() == ["MODEL", "PLANT"]
+
+    def test_list_relationships(self) -> None:
+        """등록된 관계 이름 목록을 반환한다."""
+        onto = Ontology()
+        onto.register_relationship(_rel("R1", "A", "B"))
+        assert onto.list_relationships() == ["R1"]
+
+    def test_list_derived_concepts(self) -> None:
+        """등록된 파생 개념 이름 목록을 반환한다."""
+        onto = Ontology()
+        onto.register_derived_concept(
+            DerivedConceptDef(name="eff", formula_ref=lambda x: x, inputs=("x",), formula_text="x")
+        )
+        assert onto.list_derived_concepts() == ["eff"]
+
+    def test_list_sqls(self) -> None:
+        """등록된 SQL 이름 목록을 반환한다."""
+        onto = Ontology()
+        onto.register_sql(_sql("Q1", "MODEL"))
+        onto.register_sql(_sql("Q2", "MODEL"))
+        assert onto.list_sqls() == ["Q1", "Q2"]
+
+    def test_list_modules(self) -> None:
+        """등록된 모듈 이름 목록을 반환한다."""
+        onto = Ontology()
+        onto.register_module(_module("Ctrl", "controller"))
+        assert onto.list_modules() == ["Ctrl"]
+
+    def test_get_entities_by_domain(self) -> None:
+        """domain이 일치하는 엔티티 목록을 반환한다."""
+        onto = Ontology()
+        onto.register_entity(_entity_domain("MODEL", "제조"))
+        onto.register_entity(_entity_domain("PLANT", "제조"))
+        onto.register_entity(_entity_domain("USER", "인사"))
+        result = onto.get_entities_by_domain("제조")
+        assert len(result) == 2
+        assert {e.name for e in result} == {"MODEL", "PLANT"}
+
+    def test_get_entities_by_domain_no_match(self) -> None:
+        """없는 도메인이면 빈 리스트를 반환한다."""
+        onto = Ontology()
+        onto.register_entity(_entity("MODEL"))
+        assert onto.get_entities_by_domain("없는도메인") == []
+
+    def test_get_modules_by_layer(self) -> None:
+        """layer가 일치하는 모듈 목록을 반환한다."""
+        onto = Ontology()
+        onto.register_module(_module("Ctrl", "controller"))
+        onto.register_module(_module("Svc", "biz"))
+        onto.register_module(_module("Dao", "dao"))
+        result = onto.get_modules_by_layer("dao")
+        assert len(result) == 1
+        assert result[0].name == "Dao"
+
+    def test_get_modules_by_layer_no_match(self) -> None:
+        """없는 layer면 빈 리스트를 반환한다."""
+        onto = Ontology()
+        assert onto.get_modules_by_layer("mapper") == []
+
+    def test_get_entities_by_type(self) -> None:
+        """entity_type이 일치하는 엔티티 목록을 반환한다."""
+        onto = Ontology()
+        onto.register_entity(_entity_typed("COMM_CD", "C"))
+        onto.register_entity(_entity_typed("USER_CD", "C"))
+        onto.register_entity(_entity_typed("MODEL", "M"))
+        result = onto.get_entities_by_type("C")
+        assert len(result) == 2
+        assert {e.name for e in result} == {"COMM_CD", "USER_CD"}
+
+    def test_get_entities_by_type_no_match(self) -> None:
+        """없는 유형이면 빈 리스트를 반환한다."""
+        onto = Ontology()
+        onto.register_entity(_entity_typed("MODEL", "M"))
+        assert onto.get_entities_by_type("R") == []

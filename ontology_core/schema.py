@@ -35,6 +35,20 @@ class EntityDef:
     domain: str
     primary_key: tuple[str, ...]
     attributes: tuple[AttributeDef, ...]
+    entity_type: str = ""
+
+    def __post_init__(self) -> None:
+        """primary_key·attributes·entity_type 유효성 검증."""
+        if not self.primary_key:
+            raise ValueError("primary_key는 비어 있을 수 없습니다.")
+        if not self.attributes:
+            raise ValueError("attributes는 비어 있을 수 없습니다.")
+        attr_names = [a.name for a in self.attributes]
+        if len(attr_names) != len(set(attr_names)):
+            raise ValueError("attributes에 중복된 name이 존재합니다.")
+        allowed_types = {"M", "D", "P", "S", "C", "R"}
+        if self.entity_type and self.entity_type not in allowed_types:
+            raise ValueError(f"허용되지 않는 entity_type: '{self.entity_type}'. 허용값: {allowed_types}")
 
     def get_attribute(self, attr_name: str) -> AttributeDef:
         """이름으로 AttributeDef를 조회한다. 없으면 KeyError."""
@@ -87,16 +101,20 @@ class SqlDef:
     sql: str
     entity: str
     params: tuple[str, ...] = field(default_factory=tuple)
+    sql_type: str = "SELECT"
     description: str = ""
 
     def __post_init__(self) -> None:
-        """name/sql/entity 빈 문자열 검증."""
+        """name/sql/entity 빈 문자열 및 sql_type 유효성 검증."""
         if not self.name:
             raise ValueError("name은 빈 문자열일 수 없습니다.")
         if not self.sql:
             raise ValueError("sql은 빈 문자열일 수 없습니다.")
         if not self.entity:
             raise ValueError("entity는 빈 문자열일 수 없습니다.")
+        allowed_sql_types = {"SELECT", "INSERT", "UPDATE", "DELETE"}
+        if self.sql_type not in allowed_sql_types:
+            raise ValueError(f"허용되지 않는 sql_type: '{self.sql_type}'. 허용값: {allowed_sql_types}")
 
 
 @dataclass(frozen=True)
