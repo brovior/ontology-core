@@ -108,6 +108,30 @@ class TestEntityDef:
                 attributes=(_make_attr("id"), _make_attr("id")),
             )
 
+    def test_entity_type_default_empty(self) -> None:
+        """entity_type 기본값은 빈 문자열(미분류)."""
+        entity = self._make_entity()
+        assert entity.entity_type == ""
+
+    def test_all_valid_entity_types(self) -> None:
+        """모든 허용 entity_type이 정상 생성."""
+        for et in ("M", "D", "P", "S", "C", "R"):
+            entity = EntityDef(
+                name="E", table_name="T_E", description="", domain="test",
+                primary_key=("id",), attributes=(_make_attr("id"),),
+                entity_type=et,
+            )
+            assert entity.entity_type == et
+
+    def test_invalid_entity_type_raises(self) -> None:
+        """허용되지 않는 entity_type이면 ValueError."""
+        with pytest.raises(ValueError, match="허용되지 않는 entity_type"):
+            EntityDef(
+                name="E", table_name="T_E", description="", domain="test",
+                primary_key=("id",), attributes=(_make_attr("id"),),
+                entity_type="X",
+            )
+
 
 class TestRelationshipDef:
     def test_create(self) -> None:

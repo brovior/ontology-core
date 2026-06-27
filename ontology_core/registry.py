@@ -145,3 +145,7 @@ class Ontology:
     def get_modules_by_layer(self, layer: str) -> list[ModuleDef]:
         """layer가 일치하는 ModuleDef 목록을 반환한다."""
         return [m for m in self._modules.values() if m.layer == layer]
+
+    def get_entities_by_type(self, entity_type: str) -> list[EntityDef]:
+        """entity_type이 일치하는 EntityDef 목록을 반환한다."""
+        return [e for e in self._entities.values() if e.entity_type == entity_type]

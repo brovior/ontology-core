@@ -35,9 +35,10 @@ class EntityDef:
     domain: str
     primary_key: tuple[str, ...]
     attributes: tuple[AttributeDef, ...]
+    entity_type: str = ""
 
     def __post_init__(self) -> None:
-        """primary_key·attributes 유효성 검증."""
+        """primary_key·attributes·entity_type 유효성 검증."""
         if not self.primary_key:
             raise ValueError("primary_key는 비어 있을 수 없습니다.")
         if not self.attributes:
@@ -45,6 +46,9 @@ class EntityDef:
         attr_names = [a.name for a in self.attributes]
         if len(attr_names) != len(set(attr_names)):
             raise ValueError("attributes에 중복된 name이 존재합니다.")
+        allowed_types = {"M", "D", "P", "S", "C", "R"}
+        if self.entity_type and self.entity_type not in allowed_types:
+            raise ValueError(f"허용되지 않는 entity_type: '{self.entity_type}'. 허용값: {allowed_types}")
 
     def get_attribute(self, attr_name: str) -> AttributeDef:
         """이름으로 AttributeDef를 조회한다. 없으면 KeyError."""

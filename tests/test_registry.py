@@ -228,6 +228,16 @@ def _entity_domain(name: str, domain: str) -> EntityDef:
     )
 
 
+def _entity_typed(name: str, entity_type: str) -> EntityDef:
+    """entity_type 지정 EntityDef 생성 헬퍼."""
+    pk = "id"
+    return EntityDef(
+        name=name, table_name=f"T_{name}", description="", domain="test",
+        primary_key=(pk,), attributes=(_attr(pk), _attr("name")),
+        entity_type=entity_type,
+    )
+
+
 class TestOntologyListMethods:
     def test_list_entities_empty(self) -> None:
         """빈 레지스트리에서 list_entities()는 빈 리스트를 반환한다."""
@@ -297,3 +307,19 @@ class TestOntologyListMethods:
         """없는 layer면 빈 리스트를 반환한다."""
         onto = Ontology()
         assert onto.get_modules_by_layer("mapper") == []
+
+    def test_get_entities_by_type(self) -> None:
+        """entity_type이 일치하는 엔티티 목록을 반환한다."""
+        onto = Ontology()
+        onto.register_entity(_entity_typed("COMM_CD", "C"))
+        onto.register_entity(_entity_typed("USER_CD", "C"))
+        onto.register_entity(_entity_typed("MODEL", "M"))
+        result = onto.get_entities_by_type("C")
+        assert len(result) == 2
+        assert {e.name for e in result} == {"COMM_CD", "USER_CD"}
+
+    def test_get_entities_by_type_no_match(self) -> None:
+        """없는 유형이면 빈 리스트를 반환한다."""
+        onto = Ontology()
+        onto.register_entity(_entity_typed("MODEL", "M"))
+        assert onto.get_entities_by_type("R") == []
