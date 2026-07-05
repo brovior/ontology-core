@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-from ontology_core.schema import DerivedConceptDef, EntityDef, ModuleDef, RelationshipDef, SqlDef
+from ontology_core.schema import CodeConceptDef, DerivedConceptDef, EntityDef, ModuleDef, RelationshipDef, SqlDef
 
 
 class Ontology:
-    """등록된 엔티티·관계·파생 개념을 보관하는 중앙 레지스트리."""
+    """등록된 엔티티·관계·파생 개념을 보관하는 중앙 레지스트리.
+
+    CodeConceptDef는 validate()의 교차 참조 검증 대상이 아니다: scheme_name은
+    자유 문자열이라 참조할 등록 대상이 없고, 필수값은 생성 시점(__post_init__)에,
+    유일성은 등록 시점(register_code_concept)에 이미 강제되기 때문이다.
+    """
 
     def __init__(self) -> None:
         """내부 딕셔너리를 초기화한다."""
@@ -15,6 +20,7 @@ class Ontology:
         self._derived_concepts: dict[str, DerivedConceptDef] = {}
         self._sqls: dict[str, SqlDef] = {}
         self._modules: dict[str, ModuleDef] = {}
+        self._code_concepts: dict[tuple[str, str], CodeConceptDef] = {}
 
     def register_entity(self, entity_def: EntityDef) -> None:
         """EntityDef를 이름 기준으로 등록한다."""
@@ -149,3 +155,38 @@ class Ontology:
     def get_entities_by_type(self, entity_type: str) -> list[EntityDef]:
         """entity_type이 일치하는 EntityDef 목록을 반환한다."""
         return [e for e in self._entities.values() if e.entity_type == entity_type]
+
+    def register_code_concept(self, concept_def: CodeConceptDef) -> None:
+        """CodeConceptDef를 (scheme_name, code_value) 복합키로 등록한다.
+
+        이미 등록된 키이면 ValueError를 발생시킨다(다른 register_* 메서드와
+        달리 덮어쓰기를 허용하지 않는다).
+        """
+        key = (concept_def.scheme_name, concept_def.code_value)
+        if key in self._code_concepts:
+            raise ValueError(f"이미 등록된 코드 컨셉: {key}")
+        self._code_concepts[key] = concept_def
+
+    def get_code_concept(self, scheme_name: str, code_value: str) -> CodeConceptDef:
+        """(scheme_name, code_value)로 CodeConceptDef를 조회한다. 없으면 KeyError."""
+        key = (scheme_name, code_value)
+        if key not in self._code_concepts:
+            raise KeyError(f"등록되지 않은 코드 컨셉: {key}")
+        return self._code_concepts[key]
+
+    def get_concepts_by_scheme(self, scheme_name: str) -> tuple[CodeConceptDef, ...]:
+        """scheme_name이 일치하는 CodeConceptDef를 등록 순서대로 반환한다."""
+        return tuple(c for c in self._code_concepts.values() if c.scheme_name == scheme_name)
+
+    @property
+    def code_concepts(self) -> tuple[CodeConceptDef, ...]:
+        """등록된 모든 CodeConceptDef를 등록 순서대로 반환한다."""
+        return tuple(self._code_concepts.values())
+
+    def list_schemes(self) -> list[str]:
+        """등록된 CodeConceptDef의 고유 scheme_name 목록을 등록 순서로 반환한다."""
+        schemes: list[str] = []
+        for concept in self._code_concepts.values():
+            if concept.scheme_name not in schemes:
+                schemes.append(concept.scheme_name)
+        return schemes

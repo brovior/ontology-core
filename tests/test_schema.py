@@ -1,7 +1,15 @@
 """schema.py 단위 테스트."""
 
 import pytest
-from ontology_core.schema import AttributeDef, DerivedConceptDef, EntityDef, ModuleDef, RelationshipDef, SqlDef
+from ontology_core.schema import (
+    AttributeDef,
+    CodeConceptDef,
+    DerivedConceptDef,
+    EntityDef,
+    ModuleDef,
+    RelationshipDef,
+    SqlDef,
+)
 
 
 def _make_attr(name: str = "id", unit: str = "none") -> AttributeDef:
@@ -132,6 +140,34 @@ class TestEntityDef:
                 entity_type="X",
             )
 
+    def test_psl_isa95_tag_defaults_empty(self) -> None:
+        """psl_tag/isa95_tag 기본값은 빈 문자열."""
+        entity = self._make_entity()
+        assert entity.psl_tag == ""
+        assert entity.isa95_tag == ""
+
+    def test_psl_isa95_tag_arbitrary_value(self) -> None:
+        """psl_tag/isa95_tag는 임의 값을 자유롭게 설정할 수 있다(열린 어휘)."""
+        entity = EntityDef(
+            name="E", table_name="T_E", description="", domain="test",
+            primary_key=("id",), attributes=(_make_attr("id"),),
+            psl_tag="activity", isa95_tag="ProcessSegment",
+        )
+        assert entity.psl_tag == "activity"
+        assert entity.isa95_tag == "ProcessSegment"
+
+    def test_positional_args_backward_compatible(self) -> None:
+        """신규 필드 없이 위치 인자만으로 생성해도 동작한다(하위 호환)."""
+        entity = EntityDef(
+            "E", "T_E", "설명", "test",
+            ("id",),
+            (_make_attr("id"),),
+        )
+        assert entity.name == "E"
+        assert entity.entity_type == ""
+        assert entity.psl_tag == ""
+        assert entity.isa95_tag == ""
+
 
 class TestRelationshipDef:
     def test_create(self) -> None:
@@ -157,6 +193,43 @@ class TestRelationshipDef:
                 cardinality="N:M",
                 join_keys=(("id", "id"),),
             )
+
+    def test_relation_type_default_empty(self) -> None:
+        """relation_type 기본값은 빈 문자열(미분류)."""
+        rel = RelationshipDef(
+            name="R", source_entity="A", target_entity="B",
+            cardinality="1:N", join_keys=(("id", "id"),),
+        )
+        assert rel.relation_type == ""
+
+    def test_all_valid_relation_types(self) -> None:
+        """허용되는 relation_type 값 4개 전부 정상 생성."""
+        for rt in ("", "hierarchy", "reference", "code_reference"):
+            rel = RelationshipDef(
+                name="R", source_entity="A", target_entity="B",
+                cardinality="1:N", join_keys=(("id", "id"),),
+                relation_type=rt,
+            )
+            assert rel.relation_type == rt
+
+    def test_invalid_relation_type_raises(self) -> None:
+        """허용되지 않는 relation_type이면 ValueError."""
+        with pytest.raises(ValueError, match="허용되지 않는 relation_type"):
+            RelationshipDef(
+                name="R", source_entity="A", target_entity="B",
+                cardinality="1:N", join_keys=(("id", "id"),),
+                relation_type="partof",
+            )
+
+    def test_positional_args_backward_compatible(self) -> None:
+        """신규 필드 없이 위치 인자만으로 생성해도 동작한다(하위 호환)."""
+        rel = RelationshipDef(
+            "R", "A", "B", "1:N", (("id", "id"),),
+        )
+        assert rel.name == "R"
+        assert rel.via_entity == ""
+        assert rel.description == ""
+        assert rel.relation_type == ""
 
 
 class TestDerivedConceptDef:
@@ -265,3 +338,49 @@ class TestModuleDef:
         m = self._make_module()
         with pytest.raises((AttributeError, TypeError)):
             m.name = "changed"  # type: ignore[misc]
+
+
+class TestCodeConceptDef:
+    def _make_concept(self, **overrides: object) -> CodeConceptDef:
+        """테스트용 CodeConceptDef 생성 헬퍼."""
+        kwargs: dict[str, object] = dict(
+            scheme_name="WORK_TYPE",
+            code_value="W",
+            pref_label="작업",
+        )
+        kwargs.update(overrides)
+        return CodeConceptDef(**kwargs)  # type: ignore[arg-type]
+
+    def test_create_basic(self) -> None:
+        """기본 CodeConceptDef 생성."""
+        concept = self._make_concept()
+        assert concept.scheme_name == "WORK_TYPE"
+        assert concept.code_value == "W"
+        assert concept.pref_label == "작업"
+
+    def test_defaults(self) -> None:
+        """definition/source_ref 기본값은 빈 문자열."""
+        concept = self._make_concept()
+        assert concept.definition == ""
+        assert concept.source_ref == ""
+
+    def test_empty_scheme_name_raises(self) -> None:
+        """scheme_name이 빈 문자열이면 ValueError."""
+        with pytest.raises(ValueError, match="scheme_name은 빈 문자열일 수 없습니다"):
+            self._make_concept(scheme_name="")
+
+    def test_empty_code_value_raises(self) -> None:
+        """code_value가 빈 문자열이면 ValueError."""
+        with pytest.raises(ValueError, match="code_value는 빈 문자열일 수 없습니다"):
+            self._make_concept(code_value="")
+
+    def test_empty_pref_label_raises(self) -> None:
+        """pref_label이 빈 문자열이면 ValueError."""
+        with pytest.raises(ValueError, match="pref_label은 빈 문자열일 수 없습니다"):
+            self._make_concept(pref_label="")
+
+    def test_frozen(self) -> None:
+        """frozen=True — 속성 변경 불가."""
+        concept = self._make_concept()
+        with pytest.raises((AttributeError, TypeError)):
+            concept.code_value = "changed"  # type: ignore[misc]

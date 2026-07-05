@@ -87,6 +87,48 @@ record = query.get("MODEL", {"model_cd": "M001"})
 print(record)  # {'model_cd': 'M001', 'model_nm': '알파'}
 ```
 
+### OWL/SKOS로 내보내기
+
+`export.py`는 외부 의존성 없이(rdflib 등 미사용) 순수 문자열 생성만으로 Turtle을 만듭니다. `to_owl()`은 엔티티·속성·관계를, `to_skos()`는 코드 컨셉을 변환합니다.
+
+```python
+from ontology_core.schema import CodeConceptDef
+from ontology_core.export import to_owl, to_skos
+
+# 코드 컨셉 등록 (위 model 온톨로지에 이어서)
+ontology.register_code_concept(CodeConceptDef(
+    scheme_name="WORK_TYPE",
+    code_value="W",
+    pref_label="작업",
+    definition="생산 작업 지시 유형",
+    source_ref="WorkTypeDao",
+))
+
+print(to_owl(ontology))
+# @prefix owl: <http://www.w3.org/2002/07/owl#> .
+# ...
+# :MODEL a owl:Class .
+# :MODEL rdfs:label "MODEL"@ko .
+# :MODEL rdfs:comment "모델 마스터"@ko .
+# :MODEL_model_cd a owl:DatatypeProperty .
+# :MODEL_model_cd rdfs:domain :MODEL .
+# :MODEL_model_cd rdfs:range xsd:string .
+# ...
+
+print(to_skos(ontology))
+# @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+# ...
+# :WORK_TYPE a skos:ConceptScheme .
+# :WORK_TYPE rdfs:label "WORK_TYPE"@ko .
+# :WORK_TYPE_W a skos:Concept .
+# :WORK_TYPE_W skos:inScheme :WORK_TYPE .
+# :WORK_TYPE_W skos:prefLabel "작업"@ko .
+# :WORK_TYPE_W skos:definition "생산 작업 지시 유형"@ko .
+# :WORK_TYPE_W dct:source "WorkTypeDao" .
+```
+
+동일한 `Ontology` 입력에 대해 항상 바이트 단위로 동일한 문자열을 반환합니다(엔티티/관계/scheme은 이름 오름차순 정렬). `SqlDef`/`ModuleDef`/`DerivedConceptDef`는 export 대상이 아닙니다.
+
 ## 아키텍처
 
 레이어는 한 방향으로만 조합됩니다: `schema → registry → data_source → query`
@@ -104,7 +146,8 @@ print(record)  # {'model_cd': 'M001', 'model_nm': '알파'}
 ├─────────────────────────────────────────────────┤
 │  registry.py  ·  Ontology                       │  중앙 메타데이터 스토어
 │    ├─ register / get : entity, relationship,    │
-│    │                   concept, sql, module     │
+│    │                   concept, sql, module,    │
+│    │                   code_concept              │
 │    └─ validate()                                │
 ├─────────────────────────────────────────────────┤
 │  schema.py  ·  불변 메타데이터 정의              │  스키마 레이어
@@ -113,22 +156,28 @@ print(record)  # {'model_cd': 'M001', 'model_nm': '알파'}
 │    ├─ RelationshipDef (방향성 관계)             │
 │    ├─ DerivedConceptDef (파생 공식)             │
 │    ├─ SqlDef          (SQL 구문)                │
-│    └─ ModuleDef       (Java 모듈)              │
+│    ├─ ModuleDef       (Java 모듈)              │
+│    └─ CodeConceptDef  (코드값 의미)             │
+├─────────────────────────────────────────────────┤
+│  export.py  ·  OWL/SKOS Turtle 내보내기          │  부가 레이어(registry만 소비)
+│    ├─ to_owl  (엔티티/속성/관계 → OWL)           │
+│    └─ to_skos (코드 컨셉 → SKOS)                 │
 └─────────────────────────────────────────────────┘
 ```
 
 ### schema.py — 불변 메타데이터 정의
 
-여섯 가지 `frozen=True` 데이터클래스로 구성됩니다.
+일곱 가지 `frozen=True` 데이터클래스로 구성됩니다.
 
 | 클래스 | 역할 | 주요 제약 |
 |--------|------|-----------|
 | `AttributeDef` | 논리 컬럼 | `unit` ∈ `{sec, pct, count, grade, weeks, none}` |
-| `EntityDef` | 논리 테이블 | `primary_key`·`attributes` 비어 있을 수 없음; `entity_type` ∈ `{M, D, P, S, C, R}` 또는 빈 문자열 |
-| `RelationshipDef` | 방향성 관계 | `cardinality` ∈ `{1:1, 1:N, M:N}` |
+| `EntityDef` | 논리 테이블 | `primary_key`·`attributes` 비어 있을 수 없음; `entity_type` ∈ `{M, D, P, S, C, R}` 또는 빈 문자열; 선택적 `psl_tag`/`isa95_tag`(값 검증 없는 열린 어휘, 예: `"activity"`/`"ProcessSegment"`) |
+| `RelationshipDef` | 방향성 관계 | `cardinality` ∈ `{1:1, 1:N, M:N}`; 선택적 `relation_type` ∈ `{"", hierarchy, reference, code_reference}` |
 | `DerivedConceptDef` | 파생 공식 | `formula_ref`는 callable; `inputs`로 키워드 인수 선언 |
 | `SqlDef` | SQL 구문 | `name`, `sql`, `entity` 모두 빈 문자열 불가; `sql_type` ∈ `{SELECT, INSERT, UPDATE, DELETE}` |
 | `ModuleDef` | Java 소스 모듈 | `layer` ∈ `{controller, biz, dao, mapper}` |
+| `CodeConceptDef` | 코드값(enum) 의미 | `scheme_name`·`code_value`·`pref_label` 모두 빈 문자열 불가; 선택적 `definition`·`source_ref` |
 
 모든 컬렉션 필드는 불변성 보장을 위해 `list` 대신 `tuple`을 사용합니다.
 
@@ -156,6 +205,7 @@ ontology.register_relationship(rel_def)
 ontology.register_derived_concept(concept_def)
 ontology.register_sql(sql_def)
 ontology.register_module(module_def)
+ontology.register_code_concept(code_concept_def)
 
 # 교차 참조 검증 (오류 없으면 [])
 errors = ontology.validate()
@@ -168,11 +218,19 @@ errors = ontology.validate()
 - `ModuleDef.related_entities`의 각 항목이 등록된 엔티티인지
 - `ModuleDef.related_sqls`의 각 항목이 등록된 SQL인지
 
+(`CodeConceptDef`는 `scheme_name`이 자유 문자열이라 교차 참조 대상이 없으며, 필수값·유일성은 생성/등록 시점에 이미 강제되므로 `validate()` 대상이 아닙니다.)
+
 조회 편의 메서드:
 - `list_entities()` · `list_relationships()` · `list_derived_concepts()` · `list_sqls()` · `list_modules()` — 등록된 이름 목록(등록 순서)
 - `get_entities_by_domain(domain)` — 도메인별 엔티티 필터
 - `get_entities_by_type(entity_type)` — 유형 코드별 엔티티 필터 (예: `"C"` → 공통 코드 테이블)
 - `get_modules_by_layer(layer)` — 레이어별 모듈 필터
+- `get_code_concept(scheme_name, code_value)` — 코드 컨셉 단건 조회 (없으면 `KeyError`)
+- `get_concepts_by_scheme(scheme_name)` — scheme별 코드 컨셉 목록(등록 순서)
+- `code_concepts` — 등록된 전체 `CodeConceptDef` 목록(등록 순서)
+- `list_schemes()` — 등록된 고유 scheme 이름 목록(등록 순서)
+
+`register_code_concept(concept_def)`는 다른 `register_*`와 달리 동일한 `(scheme_name, code_value)`가 이미 등록되어 있으면 덮어쓰지 않고 `ValueError`를 발생시킵니다.
 
 ### data_source.py — DataSource Protocol
 
