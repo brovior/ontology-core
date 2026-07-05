@@ -2,7 +2,15 @@
 
 import pytest
 from ontology_core.registry import Ontology
-from ontology_core.schema import AttributeDef, DerivedConceptDef, EntityDef, ModuleDef, RelationshipDef, SqlDef
+from ontology_core.schema import (
+    AttributeDef,
+    CodeConceptDef,
+    DerivedConceptDef,
+    EntityDef,
+    ModuleDef,
+    RelationshipDef,
+    SqlDef,
+)
 
 
 def _attr(name: str) -> AttributeDef:
@@ -323,3 +331,62 @@ class TestOntologyListMethods:
         onto = Ontology()
         onto.register_entity(_entity_typed("MODEL", "M"))
         assert onto.get_entities_by_type("R") == []
+
+
+def _code_concept(scheme: str = "WORK_TYPE", value: str = "W", **kwargs: object) -> CodeConceptDef:
+    """테스트용 CodeConceptDef 생성 헬퍼."""
+    return CodeConceptDef(scheme_name=scheme, code_value=value, pref_label=f"{scheme}-{value}", **kwargs)  # type: ignore[arg-type]
+
+
+class TestOntologyCodeConcept:
+    def test_register_and_get_code_concept(self) -> None:
+        """CodeConceptDef 등록 후 (scheme_name, code_value)로 조회."""
+        onto = Ontology()
+        onto.register_code_concept(_code_concept("WORK_TYPE", "W"))
+        concept = onto.get_code_concept("WORK_TYPE", "W")
+        assert concept.pref_label == "WORK_TYPE-W"
+
+    def test_register_duplicate_raises(self) -> None:
+        """동일 (scheme_name, code_value) 중복 등록 시 ValueError."""
+        onto = Ontology()
+        onto.register_code_concept(_code_concept("WORK_TYPE", "W"))
+        with pytest.raises(ValueError, match="이미 등록된 코드 컨셉"):
+            onto.register_code_concept(_code_concept("WORK_TYPE", "W"))
+
+    def test_get_code_concept_not_found(self) -> None:
+        """미등록 코드 컨셉 조회 시 KeyError."""
+        onto = Ontology()
+        with pytest.raises(KeyError, match="등록되지 않은 코드 컨셉"):
+            onto.get_code_concept("WORK_TYPE", "MISSING")
+
+    def test_get_concepts_by_scheme_preserves_order(self) -> None:
+        """get_concepts_by_scheme은 등록 순서를 보존한다."""
+        onto = Ontology()
+        onto.register_code_concept(_code_concept("WORK_TYPE", "W"))
+        onto.register_code_concept(_code_concept("WORK_TYPE", "R"))
+        onto.register_code_concept(_code_concept("OTHER", "X"))
+        result = onto.get_concepts_by_scheme("WORK_TYPE")
+        assert [c.code_value for c in result] == ["W", "R"]
+
+    def test_get_concepts_by_scheme_empty(self) -> None:
+        """등록되지 않은 scheme 조회 시 빈 tuple을 반환한다."""
+        onto = Ontology()
+        assert onto.get_concepts_by_scheme("MISSING") == ()
+
+    def test_code_concepts_property(self) -> None:
+        """code_concepts 프로퍼티는 전체 CodeConceptDef를 등록 순서로 반환한다."""
+        onto = Ontology()
+        onto.register_code_concept(_code_concept("WORK_TYPE", "W"))
+        onto.register_code_concept(_code_concept("OTHER", "X"))
+        assert [(c.scheme_name, c.code_value) for c in onto.code_concepts] == [
+            ("WORK_TYPE", "W"),
+            ("OTHER", "X"),
+        ]
+
+    def test_list_schemes(self) -> None:
+        """list_schemes는 등록 순서의 고유 scheme 이름 목록을 반환한다."""
+        onto = Ontology()
+        onto.register_code_concept(_code_concept("WORK_TYPE", "W"))
+        onto.register_code_concept(_code_concept("WORK_TYPE", "R"))
+        onto.register_code_concept(_code_concept("OTHER", "X"))
+        assert onto.list_schemes() == ["WORK_TYPE", "OTHER"]
