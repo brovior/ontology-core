@@ -194,6 +194,23 @@ class TestRelationshipDef:
                 join_keys=(("id", "id"),),
             )
 
+    def test_all_valid_cardinalities(self) -> None:
+        """허용되는 cardinality 값 4개 전부 정상 생성(UNKNOWN 포함)."""
+        for card in ("1:1", "1:N", "M:N", "UNKNOWN"):
+            rel = RelationshipDef(
+                name="R", source_entity="A", target_entity="B",
+                cardinality=card, join_keys=(("id", "id"),),
+            )
+            assert rel.cardinality == card
+
+    def test_review_cardinality_raises(self) -> None:
+        """파이프라인 일시 상태("REVIEW")는 관계 속성이 아니므로 거부된다."""
+        with pytest.raises(ValueError, match="허용되지 않는 cardinality"):
+            RelationshipDef(
+                name="R", source_entity="A", target_entity="B",
+                cardinality="REVIEW", join_keys=(("id", "id"),),
+            )
+
     def test_relation_type_default_empty(self) -> None:
         """relation_type 기본값은 빈 문자열(미분류)."""
         rel = RelationshipDef(
