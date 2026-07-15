@@ -125,6 +125,30 @@ class TestToOwl:
         assert "\\r\\n둘째 줄" in ttl
         assert "\r" not in ttl
 
+    def test_unknown_cardinality_emitted_as_annotation(self) -> None:
+        """cardinality="UNKNOWN"도 기존 annotation 경로로 그대로 방출된다."""
+        onto = Ontology()
+        onto.register_entity(
+            EntityDef(
+                name="A", table_name="T_A", description="", domain="d",
+                primary_key=("id",), attributes=(_attr("id"),),
+            )
+        )
+        onto.register_entity(
+            EntityDef(
+                name="B", table_name="T_B", description="", domain="d",
+                primary_key=("id",), attributes=(_attr("id"),),
+            )
+        )
+        onto.register_relationship(
+            RelationshipDef(
+                name="A_B", source_entity="A", target_entity="B",
+                cardinality="UNKNOWN", join_keys=(("id", "id"),),
+            )
+        )
+        ttl = to_owl(onto)
+        assert ':cardinality "UNKNOWN" .' in ttl
+
     def test_empty_ontology_returns_prelude_only(self) -> None:
         """빈 Ontology는 prelude만 포함한 문자열을 반환한다."""
         ttl = to_owl(Ontology())

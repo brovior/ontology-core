@@ -71,6 +71,12 @@ class EntityDef:
 class RelationshipDef:
     """두 엔티티 간의 관계 메타데이터.
 
+    cardinality 값 의미:
+    - "1:1" / "1:N" / "M:N": 구조적으로 증명(또는 판정)된 카디널리티.
+    - "UNKNOWN": 관계 자체는 관측·복원됐으나 카디널리티가 미증명 — 소비자가
+      단정 대신 정직한 공백을 기록할 때 사용한다. (판정 대기 같은 파이프라인의
+      일시 상태(예: "REVIEW")는 관계의 속성이 아니므로 허용하지 않는다.)
+
     relation_type 판정 예시:
     - HRNK_UNIQ_ID 자기참조 조인(계층 구조 탐색) → "hierarchy"
     - MODEL_CD 조인(단순 참조/FK 탐색) → "reference"
@@ -90,7 +96,7 @@ class RelationshipDef:
 
     def __post_init__(self) -> None:
         """cardinality·relation_type 값 유효성 검증."""
-        allowed = {"1:1", "1:N", "M:N"}
+        allowed = {"1:1", "1:N", "M:N", "UNKNOWN"}
         if self.cardinality not in allowed:
             raise ValueError(f"허용되지 않는 cardinality: '{self.cardinality}'. 허용값: {allowed}")
         if self.relation_type not in ALLOWED_RELATION_TYPES:
