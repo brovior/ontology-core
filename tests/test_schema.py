@@ -230,6 +230,7 @@ class TestRelationshipDef:
         assert rel.via_entity == ""
         assert rel.description == ""
         assert rel.relation_type == ""
+        assert rel.source_ref == ""
 
 
 class TestDerivedConceptDef:

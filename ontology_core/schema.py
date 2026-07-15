@@ -86,6 +86,7 @@ class RelationshipDef:
     via_entity: str = ""
     description: str = ""
     relation_type: str = ""
+    source_ref: str = ""  # 출처 식별자 (예: 관계를 관측한 DAO 메서드명; 검증 없는 열린 값)
 
     def __post_init__(self) -> None:
         """cardinality·relation_type 값 유효성 검증."""
