@@ -50,6 +50,7 @@ def sample_ontology() -> Ontology:
             cardinality="1:N",
             join_keys=(("plant_cd", "plant_cd"),),
             relation_type="hierarchy",
+            source_ref="ModelPlantDao.listByPlant",
         )
     )
     onto.register_code_concept(
@@ -94,6 +95,8 @@ class TestToOwl:
         assert "a owl:DatatypeProperty ." in ttl
         assert "a owl:ObjectProperty ." in ttl
         assert ':relationType "hierarchy" .' in ttl
+        # 관계 출처는 Dublin Core dct:source로 기록된다(CodeConceptDef와 동일 표준).
+        assert 'dct:source "ModelPlantDao.listByPlant" .' in ttl
 
     def test_escapes_quotes_and_newlines(self, sample_ontology: Ontology) -> None:
         """description의 큰따옴표/개행이 이스케이프되어 출력된다."""

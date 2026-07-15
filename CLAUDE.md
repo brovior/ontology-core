@@ -41,7 +41,7 @@ pip install hatchling && python -m hatchling build
 모든 스키마 타입은 `frozen=True` 데이터클래스입니다. `__post_init__`의 유효성 검증 외에는 별도 동작을 갖지 않습니다:
 - `AttributeDef`: 논리 컬럼. `unit`은 `{"sec","pct","count","grade","weeks","none"}` 중 하나여야 합니다.
 - `EntityDef`: 논리 테이블. `AttributeDef` 튜플과 속성 이름의 `primary_key` 튜플을 보유합니다. `primary_key`·`attributes`는 비어 있을 수 없고 속성명은 중복될 수 없습니다. 선택적 `entity_type`은 테이블 유형 코드로 `{"M","D","P","S","C","R"}`(마스터/디테일/피리어드/써머리/코드/임시) 중 하나 또는 빈 문자열(미분류)이며, 관계·카디널리티 추론의 사전 신호로 쓰입니다. 선택적 `psl_tag`/`isa95_tag`는 PSL(ISO 18629)/ISA-95 표준 어휘 정합 태그로, 값 검증 없는 열린 어휘입니다(기본값 `""`).
-- `RelationshipDef`: 두 엔티티 간의 방향성 관계. `cardinality`는 `"1:1"`, `"1:N"`, `"M:N"` 중 하나. 선택적 `via_entity`로 M:N의 중간 엔티티를 지정합니다. 선택적 `relation_type`은 `ALLOWED_RELATION_TYPES`(`{"", "hierarchy", "reference", "code_reference"}`) 중 하나여야 합니다.
+- `RelationshipDef`: 두 엔티티 간의 방향성 관계. `cardinality`는 `"1:1"`, `"1:N"`, `"M:N"` 중 하나. 선택적 `via_entity`로 M:N의 중간 엔티티를 지정합니다. 선택적 `relation_type`은 `ALLOWED_RELATION_TYPES`(`{"", "hierarchy", "reference", "code_reference"}`) 중 하나여야 합니다. 선택적 `source_ref`는 관계 출처 식별자(예: 관측한 DAO 메서드명)로, 값 검증 없는 열린 값입니다(기본값 `""`, `CodeConceptDef.source_ref`와 동일 성격).
 - `DerivedConceptDef`: 이름이 있는 공식. `formula_ref`는 plain callable; `inputs`로 키워드 인수명을 선언합니다.
 - `SqlDef`: SQL 구문 단위 메타데이터. `name`, `sql`, `entity`는 빈 문자열 불가. `sql_type`은 `{"SELECT","INSERT","UPDATE","DELETE"}` 중 하나(기본 `"SELECT"`). `params`로 바인드 파라미터명을 선언합니다.
 - `ModuleDef`: Java 소스 모듈 단위 메타데이터. `layer`는 `{"controller","biz","dao","mapper"}` 중 하나. `related_entities`와 `related_sqls`로 연관 메타데이터를 참조합니다.
@@ -79,6 +79,7 @@ pip install hatchling && python -m hatchling build
 `to_owl(ontology, base_iri=...)`와 `to_skos(ontology, base_iri=...)`는 순수 문자열 생성만으로 Turtle을 만듭니다(파일 쓰기·rdflib 등 외부 의존성 없음, zero-dependency 유지). `to_owl`은 `EntityDef`→`owl:Class`, `AttributeDef`→`owl:DatatypeProperty`, `RelationshipDef`→`owl:ObjectProperty`로 변환하고, `to_skos`는 `CodeConceptDef`를 `scheme_name` 단위 `skos:ConceptScheme` + `skos:Concept`으로 변환합니다. `SqlDef`/`ModuleDef`/`DerivedConceptDef`는 export 대상이 아닙니다.
 
 - **관계형 어휘는 단일 상수로 관리**: `RelationshipDef.relation_type`이 허용하는 값 집합은 `schema.py`의 `ALLOWED_RELATION_TYPES` 하나로만 정의되며, `export.py`는 이를 그대로 annotation(`:relationType`)으로 기록할 뿐 `"hierarchy"` 등을 `owl:partOf` 같은 의미로 자동 매핑하지 않습니다.
+- **관계 출처는 `dct:source`**: `RelationshipDef.source_ref`는 `to_owl`에서 `owl:ObjectProperty`에 Dublin Core `dct:source` 리터럴 annotation으로 기록됩니다(`CodeConceptDef.source_ref`가 `to_skos`에서 나가는 것과 동일 표준·패턴, 언어태그 없음). 외부 term이라 별도 `owl:AnnotationProperty` 선언은 하지 않습니다.
 - **결정론 출력 규약**: 엔티티/관계/scheme(및 scheme 내 concept)은 이름(또는 `code_value`) 오름차순, 엔티티 내 속성은 `attributes` 튜플의 정의 순서를 유지합니다. 동일 입력은 항상 바이트 단위로 동일한 문자열을 반환합니다.
 - **IRI 안전화**: `_safe_iri_fragment()`가 영문자/숫자/언더스코어 외 문자를 `_U{코드포인트 16진}_`로 치환합니다(percent-encoding 미사용). 서로 다른 원본 이름이 같은 fragment로 치환되면 `ValueError`를 발생시킵니다.
 

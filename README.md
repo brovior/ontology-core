@@ -173,7 +173,7 @@ print(to_skos(ontology))
 |--------|------|-----------|
 | `AttributeDef` | 논리 컬럼 | `unit` ∈ `{sec, pct, count, grade, weeks, none}` |
 | `EntityDef` | 논리 테이블 | `primary_key`·`attributes` 비어 있을 수 없음; `entity_type` ∈ `{M, D, P, S, C, R}` 또는 빈 문자열; 선택적 `psl_tag`/`isa95_tag`(값 검증 없는 열린 어휘, 예: `"activity"`/`"ProcessSegment"`) |
-| `RelationshipDef` | 방향성 관계 | `cardinality` ∈ `{1:1, 1:N, M:N}`; 선택적 `relation_type` ∈ `{"", hierarchy, reference, code_reference}` |
+| `RelationshipDef` | 방향성 관계 | `cardinality` ∈ `{1:1, 1:N, M:N}`; 선택적 `relation_type` ∈ `{"", hierarchy, reference, code_reference}`; 선택적 `source_ref`(관계 출처, `dct:source`로 export) |
 | `DerivedConceptDef` | 파생 공식 | `formula_ref`는 callable; `inputs`로 키워드 인수 선언 |
 | `SqlDef` | SQL 구문 | `name`, `sql`, `entity` 모두 빈 문자열 불가; `sql_type` ∈ `{SELECT, INSERT, UPDATE, DELETE}` |
 | `ModuleDef` | Java 소스 모듈 | `layer` ∈ `{controller, biz, dao, mapper}` |

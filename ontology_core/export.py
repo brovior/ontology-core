@@ -153,6 +153,11 @@ def to_owl(ontology: Ontology, base_iri: str = "http://example.org/mes-ontology#
             # annotation으로만 기록한다.
             lines.append(f':{frag} :relationType "{_escape_literal(rel.relation_type)}" .')
             used_annotations.add("relationType")
+        if rel.source_ref:
+            # 관계의 출처(관측 DAO 메서드 등)는 Dublin Core `dct:source`로 기록한다 —
+            # CodeConceptDef.source_ref(to_skos)와 동일 표준·패턴. 외부 term이라
+            # AnnotationProperty 선언이 필요 없고, 언어태그 없는 순수 리터럴이다.
+            lines.append(f':{frag} dct:source "{_escape_literal(rel.source_ref)}" .')
         relationship_lines.append("\n".join(lines))
 
     blocks = [_PRELUDE_TEMPLATE.format(base_iri=base_iri)]
