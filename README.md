@@ -167,13 +167,16 @@ print(to_skos(ontology))
 
 ### schema.py — 불변 메타데이터 정의
 
-일곱 가지 `frozen=True` 데이터클래스로 구성됩니다.
+열 가지 `frozen=True` 데이터클래스로 구성됩니다.
 
 | 클래스 | 역할 | 주요 제약 |
 |--------|------|-----------|
 | `AttributeDef` | 논리 컬럼 | `unit` ∈ `{sec, pct, count, grade, weeks, none}` |
 | `EntityDef` | 논리 테이블 | `primary_key`·`attributes` 비어 있을 수 없음; `entity_type` ∈ `{M, D, P, S, C, R}` 또는 빈 문자열; 선택적 `psl_tag`/`isa95_tag`(값 검증 없는 열린 어휘, 예: `"activity"`/`"ProcessSegment"`) |
 | `RelationshipDef` | 방향성 관계 | `cardinality` ∈ `{1:1, 1:N, M:N, UNKNOWN}`(`UNKNOWN` = 관측됐으나 미증명 카디널리티의 정직한 공백); 선택적 `relation_type` ∈ `{"", hierarchy, reference, code_reference}`; 선택적 `source_ref`(관계 출처, `dct:source`로 export) |
+| `EvidenceEndpointDef` | 관측 테이블의 논리 끝점 | `table_ref` 필수; `entity_ref`와 미물질화 사유는 상호 배타적 |
+| `EvidenceSourceDef` | 출처·문맥·입력 스냅샷 | `source_ref` 필수; 세 값의 대응을 보존 |
+| `RelationshipEvidenceDef` | 전체 관계 관측·전문가 분류·평가 상태 | 비어 있지 않은 중복 없는 컬럼쌍 tuple; 역할·평가 상태 enum 및 그룹 검증 |
 | `DerivedConceptDef` | 파생 공식 | `formula_ref`는 callable; `inputs`로 키워드 인수 선언 |
 | `SqlDef` | SQL 구문 | `name`, `sql`, `entity` 모두 빈 문자열 불가; `sql_type` ∈ `{SELECT, INSERT, UPDATE, DELETE}` |
 | `ModuleDef` | Java 소스 모듈 | `layer` ∈ `{controller, biz, dao, mapper}` |
@@ -230,7 +233,7 @@ errors = ontology.validate()
 - `code_concepts` — 등록된 전체 `CodeConceptDef` 목록(등록 순서)
 - `list_schemes()` — 등록된 고유 scheme 이름 목록(등록 순서)
 
-`register_code_concept(concept_def)`는 다른 `register_*`와 달리 동일한 `(scheme_name, code_value)`가 이미 등록되어 있으면 덮어쓰지 않고 `ValueError`를 발생시킵니다.
+`register_code_concept(concept_def)`는 동일한 `(scheme_name, code_value)`를, `register_relationship_evidence(evidence_def)`는 동일한 근거 이름을 `ValueError`로 거부합니다. 기존 `register_relationship()`의 같은 이름 덮어쓰기는 유지합니다.
 
 ### data_source.py — DataSource Protocol
 
@@ -313,6 +316,41 @@ ontology.register_relationship(RelationshipDef(
 plants = query.traverse("MODEL_TO_PLANTS", {"model_cd": "M001"})
 ```
 
+### 관계 근거 보존 (0.5.0)
+
+활성 `RelationshipDef`가 없는 관측도 별도 레지스트리에 저장합니다. `CANONICAL`은 그룹 대표이며 기본/안전 조인을 뜻하지 않습니다. `SUPPORTING_OBSERVATION`의 추가 조건은 기준 관계에 합치지 않으며 `HOLD`/`EXCLUDED`는 활성 관계를 참조할 수 없습니다. core는 역할이나 평가 상태를 승격하거나 카디널리티를 추론하지 않습니다. `RelationshipDef.cardinality`의 `REVIEW` 비허용은 유지합니다.
+
+```python
+from ontology_core import EvidenceEndpointDef, EvidenceSourceDef, RelationshipEvidenceDef
+
+ontology.register_relationship_evidence(RelationshipEvidenceDef(
+    name="observed_mapping",
+    source_endpoint=EvidenceEndpointDef("T_MODEL", entity_ref="MODEL"),
+    target_endpoint=EvidenceEndpointDef("T_DETAIL", unmaterialized_reason="PK_UNKNOWN"),
+    join_keys=(("MODEL_CD", "MODEL_CD"), ("SITE_CD", "SITE_CD")),
+    role="CANONICAL",
+    group_id="model_detail_group",
+    sources=(EvidenceSourceDef("ModelDao.find", "CTX_1", "input_snapshot_hash"),),
+    description="전문가 원문 검토 설명",
+    assessment_status="UNRESOLVED",
+))
+assert ontology.validate() == []
+assert ontology.list_relationship_evidence() == ["observed_mapping"]
+assert ontology.get_relationship_evidence("observed_mapping").relationship_name == ""
+```
+
+- `EvidenceEndpointDef(table_ref, entity_ref="", unmaterialized_reason="")`: 실제 엔티티가 있으면 `entity_ref`와 `EntityDef.table_name`이 일치해야 합니다. 없으면 `OUT_OF_SCOPE`, `NOT_WHITELISTED`, `PK_UNKNOWN`, `DICT_MISSING`, `NO_COLUMNS`, `PK_COL_MISSING` 중 사유가 필수입니다. 가짜 PK/엔티티를 만들지 않습니다.
+- `EvidenceSourceDef(source_ref, context_ref="", snapshot_ref="")`: 원출처·문맥·입력 스냅샷을 한 레코드로 보존하며 SQL 원문/업무행을 저장하는 용도가 아닙니다.
+- `RelationshipEvidenceDef` 필수 인수는 `name`, `source_endpoint`, `target_endpoint`, `join_keys`, `role`입니다. 선택 필드는 `group_id`, `canonical_evidence_name`, `relationship_name`, `sources`, `review_status`, `reason_code`, `description`, `assessment_status`(기본 `UNASSESSED`), `assessment_method`입니다. `description`은 원래 전문가 설명이며 LLM 설명으로 덮어쓰지 않습니다.
+- 역할은 `CANONICAL`, `SUPPORTING_OBSERVATION`, `HOLD`, `EXCLUDED`; 평가 상태는 `UNASSESSED`, `RESOLVED`, `UNRESOLVED`, `CONFLICT`입니다. 이 상태는 카디널리티가 아닙니다.
+- `CANONICAL`/`SUPPORTING_OBSERVATION`은 그룹이 필수이고, 같은 논리 테이블쌍·그룹에는 기준이 정확히 하나 있어야 합니다. 보조는 같은 그룹·끝점의 실제 기준을 참조해야 합니다. 기준은 다른 기준을 참조하지 않습니다.
+- `relationship_name`은 선택적 활성 관계 참조입니다. 기준 전체 컬럼쌍과 실제 관계를 비교하고, 관계 방향이 역이면 컬럼쌍 묶음 전체를 반전합니다. 보조의 참조는 기준 관계와 같아야 합니다. 미물질화 끝점이 있는 그룹에는 활성 관계 참조를 허용하지 않습니다.
+- 등록 순서의 이름 목록은 `list_relationship_evidence()`, 단건 조회는 `get_relationship_evidence(name)`입니다. 일반 `OntologyQuery.traverse()`는 등록된 `RelationshipDef`만 탐색합니다.
+
+`to_owl()`은 근거가 있으면 전체 `validate()` 결과가 빈 목록인지 검사하고 오류 시 `ValueError`를 냅니다. 출력은 `RelationshipEvidence`, `EvidenceEndpoint`, `EvidenceSource`, `JoinKeyPair` 메타데이터 클래스와 `owl:NamedIndividual`을 사용합니다. 실제 엔티티/관계 IRI는 `resolvesTo`/`relationshipRef` annotation으로만 참조합니다. 미물질화 끝점에는 테이블명과 사유만 보존하며 엔티티 클래스를 새로 만들지 않습니다. 근거 자체는 `owl:ObjectProperty`나 cardinality restriction이 되지 않습니다.
+
+0.5.0부터 기존 관계의 `description`도 `rdfs:comment`로, 관계와 근거의 전체 `join_keys`도 소유자별 `JoinKeyPair`로 출력합니다. `joinKeyPair`, `pairIndex`(0부터 시작하는 정렬 순서), `sourceColumn`, `targetColumn`은 서로 다른 시그니처의 경계를 보존합니다. 출처는 `hasSource`로 연결하고 각 레코드에 `dct:source`/`contextRef`/`snapshotRef`를 대응시킵니다. 끝점·출처 IRI는 전체 값의 SHA-256, 근거 IRI는 이름의 SHA-256, 컬럼쌍 IRI는 소유 IRI+인덱스에 결속됩니다. 사용자 IRI와 새 어휘/생성 IRI 충돌은 오류입니다. 새 어휘는 사용 시에만 선언하며 근거가 없고 기존 관계의 컬럼쌍·설명도 비어 있으면 이전 바이트 출력을 유지합니다. RDF parser인 `rdflib`은 개발 테스트에만 사용하고 런타임 의존성은 없습니다.
+
 ### 파생 개념 계산
 
 ```python
@@ -370,7 +408,7 @@ python -m hatchling build
 ontology-core/
 ├── ontology_core/
 │   ├── __init__.py
-│   ├── schema.py       # 불변 메타데이터 정의 (6개 클래스)
+│   ├── schema.py       # 불변 메타데이터 정의 (10개 클래스)
 │   ├── registry.py     # 중앙 레지스트리 (Ontology)
 │   ├── data_source.py  # DataSource 프로토콜 + SqlDataSource 스텁
 │   └── query.py        # 쿼리 엔진 (OntologyQuery)

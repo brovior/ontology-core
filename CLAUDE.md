@@ -91,3 +91,17 @@ pip install hatchling && python -m hatchling build
 - **프로토콜 기반 확장성**: 새 데이터 백엔드를 추가하려면 임의 클래스에 4개의 `DataSource` 프로토콜 메서드를 구현하면 됩니다 — 기반 클래스 상속 불필요.
 - **목록으로 반환되는 오류, 예외 없음**: `Ontology.validate()`는 `list[str]`을 반환합니다. 빈 목록은 정합성 통과를 의미합니다. 다운스트림 코드는 등록된 관계가 실제 엔티티를 참조한다고 신뢰하기 전에 반드시 이 목록을 확인해야 합니다.
 - **`InMemoryDataSource`를 통한 테스트 더블**: `tests/test_query.py`에 완전히 동작하는 인메모리 `DataSource` 구현체가 있습니다. 테스트에서 데이터를 목킹할 때의 참조 패턴으로 활용하세요.
+
+
+## 0.5.0 관계 근거 계약
+
+`EvidenceEndpointDef`, `EvidenceSourceDef`, `RelationshipEvidenceDef`는 새 frozen dataclass이며 기존 생성자와 `RelationshipDef` enum은 유지한다. 새 타입은 문자열·중첩 dataclass·tuple 및 각 2원 문자열 컬럼쌍을 런타임 검사한다. 빈 시그니처·중복 페어는 거부한다.
+
+- 끝점은 `table_ref`와 선택적 `entity_ref` 또는 `unmaterialized_reason`을 갖는다. 사유는 `OUT_OF_SCOPE/NOT_WHITELISTED/PK_UNKNOWN/DICT_MISSING/NO_COLUMNS/PK_COL_MISSING`이다. 실제 엔티티 참조가 있으면 사유는 공란이며 테이블명 일치는 `validate()`가 검증한다.
+- 출처는 `source_ref/context_ref/snapshot_ref`를 한 객체로 보존한다. `sources`는 이 객체의 tuple이다.
+- 근거 필드는 `name/source_endpoint/target_endpoint/join_keys/role`, 선택적 `group_id/canonical_evidence_name/relationship_name/sources/review_status/reason_code/description/assessment_status/assessment_method`이다. 역할은 `CANONICAL/SUPPORTING_OBSERVATION/HOLD/EXCLUDED`, 평가 상태는 `UNASSESSED/RESOLVED/UNRESOLVED/CONFLICT`다. 전문가 원문 `description`은 LLM 설명으로 덮어쓰지 않는다.
+- `Ontology.register_relationship_evidence/get_relationship_evidence/list_relationship_evidence`를 사용한다. 이름 목록은 등록 순서이며 새 근거의 중복 이름은 `ValueError`다. 기존 `register_relationship()`는 같은 이름을 덮어쓴다.
+- `validate()`는 (논리 테이블쌍, 그룹)의 기준 정확히 1개, 보조→같은 그룹·끝점 기준 참조, 실제 엔티티·테이블 일치, 활성 관계의 기준 전체 컬럼쌍 일치를 검증한다. 전체 방향 반전은 동치지만 일부 페어 반전은 동치가 아니다. 보조는 자기 추가조건을 기준과 합치지 않는다. 미물질화 그룹의 활성 참조는 금지한다. HOLD/EXCLUDED만 있는 그룹은 기준이 필요 없다.
+- core는 CANONICAL을 안전한 기본 조인으로 해석하거나 활성화를 실행하지 않는다. 일반 쿼리 경로는 `RelationshipDef`만 사용한다. REVIEW는 여전히 관계 cardinality로 비허용이다.
+- OWL은 근거·끝점·출처·컬럼쌍을 메타데이터 클래스와 NamedIndividual로 보존한다. `resolvesTo/relationshipRef`는 실제 Entity Class/ObjectProperty에 대한 annotation이다. 없는 엔티티를 생성하거나 근거를 활성 ObjectProperty/Restriction으로 만들지 않는다. 출처 삼중항과 소유자별 컬럼쌍은 분리 보존한다. 관계 설명도 `rdfs:comment`로 출력한다.
+- 근거가 있는 `to_owl()`은 전체 `validate()` 오류 시 출력을 거부한다. 새 어휘는 사용 시에만 선언하며, 근거 없이 관계 join_keys/description도 공란이면 기존 바이트 출력을 유지한다. 새 출력은 0.5.0 계약 변경이다. `rdflib`은 dev 테스트 의존성으로만 허용하며 런타임 zero-dependency를 유지한다.
