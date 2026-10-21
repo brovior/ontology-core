@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ontology_core.schema import CodeConceptDef, DerivedConceptDef, EntityDef, ModuleDef, RelationshipDef, SqlDef
+from ontology_core.schema import CodeConceptDef, DerivedConceptDef, EntityDef, ModuleDef, RelationshipDef, RelationshipEvidenceDef, SqlDef
 
 
 class Ontology:
@@ -17,6 +17,7 @@ class Ontology:
         """내부 딕셔너리를 초기화한다."""
         self._entities: dict[str, EntityDef] = {}
         self._relationships: dict[str, RelationshipDef] = {}
+        self._relationship_evidence: dict[str, RelationshipEvidenceDef] = {}
         self._derived_concepts: dict[str, DerivedConceptDef] = {}
         self._sqls: dict[str, SqlDef] = {}
         self._modules: dict[str, ModuleDef] = {}
@@ -29,6 +30,24 @@ class Ontology:
     def register_relationship(self, rel_def: RelationshipDef) -> None:
         """RelationshipDef를 이름 기준으로 등록한다."""
         self._relationships[rel_def.name] = rel_def
+
+    def register_relationship_evidence(self, evidence_def: RelationshipEvidenceDef) -> None:
+        """관계 근거를 등록한다. 기존 이름은 덮어쓰지 않고 ValueError를 낸다."""
+        if not isinstance(evidence_def, RelationshipEvidenceDef):
+            raise TypeError("evidence_def는 RelationshipEvidenceDef이어야 합니다.")
+        if evidence_def.name in self._relationship_evidence:
+            raise ValueError(f"이미 등록된 관계 근거: '{evidence_def.name}'")
+        self._relationship_evidence[evidence_def.name] = evidence_def
+
+    def get_relationship_evidence(self, name: str) -> RelationshipEvidenceDef:
+        """이름으로 관계 근거를 조회한다. 없으면 KeyError."""
+        if name not in self._relationship_evidence:
+            raise KeyError(f"등록되지 않은 관계 근거: '{name}'")
+        return self._relationship_evidence[name]
+
+    def list_relationship_evidence(self) -> list[str]:
+        """등록된 관계 근거 이름을 등록 순서로 반환한다."""
+        return list(self._relationship_evidence)
 
     def register_derived_concept(self, concept_def: DerivedConceptDef) -> None:
         """DerivedConceptDef를 이름 기준으로 등록한다."""
@@ -122,6 +141,58 @@ class Ontology:
                         f"모듈 '{mod.name}'의 related_sql '{s}'가 등록되지 않은 SQL입니다."
                     )
 
+        errors.extend(self._validate_relationship_evidence())
+        return errors
+
+    def _validate_relationship_evidence(self) -> list[str]:
+        """논리 끝점·그룹·기준 관계 참조를 추론 없이 검증한다."""
+        errors: list[str] = []
+        groups: dict[tuple[tuple[str, ...], str], list[RelationshipEvidenceDef]] = {}
+        for evidence in self._relationship_evidence.values():
+            for endpoint in (evidence.source_endpoint, evidence.target_endpoint):
+                if endpoint.entity_ref:
+                    entity = self._entities.get(endpoint.entity_ref)
+                    if entity is None:
+                        errors.append(f"근거 '{evidence.name}'의 entity_ref '{endpoint.entity_ref}'가 등록되지 않았습니다.")
+                    elif entity.table_name != endpoint.table_ref:
+                        errors.append(f"근거 '{evidence.name}'의 table_ref '{endpoint.table_ref}'가 엔티티 테이블과 다릅니다.")
+            pair = tuple(sorted((evidence.source_endpoint.table_ref, evidence.target_endpoint.table_ref)))
+            groups.setdefault((pair, evidence.group_id), []).append(evidence)
+
+        for (pair, group_id), members in groups.items():
+            active_members = [e for e in members if e.role in {"CANONICAL", "SUPPORTING_OBSERVATION"}]
+            canonicals = [e for e in active_members if e.role == "CANONICAL"]
+            if active_members and len(canonicals) != 1:
+                errors.append(f"근거 그룹 '{group_id}' {pair}에는 CANONICAL이 정확히 1개 필요합니다.")
+            if any(not e.source_endpoint.entity_ref or not e.target_endpoint.entity_ref for e in members):
+                if any(e.relationship_name for e in members):
+                    errors.append(f"근거 그룹 '{group_id}' {pair}의 미물질화 끝점에는 활성 관계 참조를 허용하지 않습니다.")
+
+        for evidence in self._relationship_evidence.values():
+            rel = self._relationships.get(evidence.relationship_name)
+            if evidence.relationship_name and rel is None:
+                errors.append(f"근거 '{evidence.name}'의 relationship_name '{evidence.relationship_name}'이 등록되지 않았습니다.")
+            canonical = evidence
+            if evidence.canonical_evidence_name:
+                canonical = self._relationship_evidence.get(evidence.canonical_evidence_name)
+                if canonical is None or canonical.role != "CANONICAL":
+                    errors.append(f"근거 '{evidence.name}'의 canonical_evidence_name은 실제 CANONICAL을 참조해야 합니다.")
+                    continue
+                same_pair = sorted((evidence.source_endpoint.table_ref, evidence.target_endpoint.table_ref)) == sorted((canonical.source_endpoint.table_ref, canonical.target_endpoint.table_ref))
+                if evidence.group_id != canonical.group_id or not same_pair:
+                    errors.append(f"근거 '{evidence.name}'은 CANONICAL과 같은 그룹·논리 끝점을 가져야 합니다.")
+                if evidence.relationship_name and evidence.relationship_name != canonical.relationship_name:
+                    errors.append(f"근거 '{evidence.name}'의 relationship_name은 CANONICAL의 관계와 같아야 합니다.")
+
+            if rel is None:
+                continue
+            source = canonical.source_endpoint.entity_ref
+            target = canonical.target_endpoint.entity_ref
+            keys = set(canonical.join_keys)
+            forward = (rel.source_entity, rel.target_entity) == (source, target) and set(rel.join_keys) == keys
+            reverse = (rel.source_entity, rel.target_entity) == (target, source) and set(rel.join_keys) == {(right, left) for left, right in keys}
+            if not (forward or reverse):
+                errors.append(f"근거 '{evidence.name}'의 활성 관계 끝점·기준 join_keys가 CANONICAL과 다릅니다.")
         return errors
 
     def list_entities(self) -> list[str]:
